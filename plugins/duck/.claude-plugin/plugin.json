@@ -1,0 +1,12 @@
+{
+  "name": "duck",
+  "description": "🦆 A swimming ASCII duck for your Claude Code status line.",
+  "version": "1.0.0",
+  "author": {
+    "name": "soulagent"
+  },
+  "homepage": "https://github.com/soulagent/claude-duck",
+  "repository": "https://github.com/soulagent/claude-duck",
+  "license": "MIT",
+  "keywords": ["statusline", "duck", "fun", "ascii", "animation", "truecolor"]
+}

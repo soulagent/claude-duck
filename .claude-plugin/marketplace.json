@@ -1,0 +1,18 @@
+{
+  "name": "claude-duck",
+  "owner": {
+    "name": "soulagent"
+  },
+  "metadata": {
+    "description": "🦆 claude-duck — a swimming ASCII duck for your Claude Code status line.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "duck",
+      "source": "./plugins/duck",
+      "description": "🦆 A swimming ASCII duck for your Claude Code status line — a 3-row pond where a duck snakes up and down, with rainbow truecolor usage bars.",
+      "version": "1.0.0"
+    }
+  ]
+}
