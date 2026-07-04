@@ -3,8 +3,9 @@
 //
 // Cross-platform (Node, no deps). Reads the session JSON on stdin and prints a
 // multi-line status line:
-//   L1   : model · session/weekly usage bars (Pro/Max) · context bar · cost · git branch
-//   L2–L4: a 3-row "pond" where a duck snakes DOWN the rows then back UP
+//   L1   : model · session/weekly usage bars + time-to-reset (Pro/Max) · context · cost · git branch
+//   L2   : "Working On: <root project folder>" (+ worktree name when in one)
+//   L3–L5: a 3-row "pond" where a duck snakes DOWN the rows then back UP
 //          (boustrophedon), flipping to face its travel direction, with a fading wake.
 //
 // Why a "·" waterline instead of plain spaces?
@@ -73,7 +74,21 @@ function rainbowBar(p) {
   return out;
 }
 
-// ---- Line 1: model · usage bars · context · cost · git branch ----
+// compact "time until this rate-limit window resets" (resets_at is unix epoch seconds)
+function fmtLeft(resetsAt) {
+  if (resetsAt == null) return null;
+  let secs = Math.round(resetsAt - Date.now() / 1000);
+  if (secs <= 0) return 'now';
+  const days = Math.floor(secs / 86400);
+  secs -= days * 86400;
+  const hrs = Math.floor(secs / 3600);
+  const mins = Math.floor((secs % 3600) / 60);
+  if (days > 0) return `${days}d${hrs}h`;
+  if (hrs > 0) return `${hrs}h${mins}m`;
+  return `${mins}m`;
+}
+
+// ---- Line 1: model · usage bars (+ time to reset) · context · cost ----
 const parts = [];
 
 const model = d?.model?.display_name;
@@ -82,11 +97,13 @@ if (model) parts.push(`${ESC}[36m${model}${reset}`);
 const rl = d?.rate_limits;
 if (rl?.five_hour?.used_percentage != null) {
   const p = Math.round(rl.five_hour.used_percentage);
-  parts.push(`Session ${rainbowBar(p)} ${hueNum(p, '%')}`);
+  const left = fmtLeft(rl.five_hour.resets_at);
+  parts.push(`Session ${rainbowBar(p)} ${hueNum(p, '%')}${left ? ` ${dim}${left} left${reset}` : ''}`);
 }
 if (rl?.seven_day?.used_percentage != null) {
   const p = Math.round(rl.seven_day.used_percentage);
-  parts.push(`Weekly ${rainbowBar(p)} ${hueNum(p, '%')}`);
+  const left = fmtLeft(rl.seven_day.resets_at);
+  parts.push(`Weekly ${rainbowBar(p)} ${hueNum(p, '%')}${left ? ` ${dim}${left} left${reset}` : ''}`);
 }
 
 const ctx = d?.context_window?.used_percentage;
@@ -98,8 +115,17 @@ if (ctx != null) {
 const cost = d?.cost?.total_cost_usd;
 if (cost != null) parts.push(`$${Number(cost).toFixed(2)}`);
 
+const line1 = parts.length ? parts.join(` ${dim}|${reset} `) : `${dim}🦆 claude-duck${reset}`;
+
+// ---- Line 2: "Working On: <root project folder>  ⎇ <branch>" ----
 // git branch — teal on a feature branch, red on main/master (a gentle commit guardrail)
 const dir = d?.workspace?.current_dir || d?.workspace?.project_dir;
+
+// root project folder: the dir Claude Code was launched in (basename), not the cwd
+const rootDir = d?.workspace?.project_dir || d?.workspace?.current_dir || dir;
+const projName = rootDir ? rootDir.replace(/[\\/]+$/, '').split(/[\\/]/).pop() : '';
+
+let branchStr = '';
 if (dir) {
   try {
     const branch = execSync(`git -C "${dir}" branch --show-current`, {
@@ -109,22 +135,33 @@ if (dir) {
       .trim();
     if (branch) {
       const arrow = '⎇';
-      parts.push(
+      branchStr =
         branch === 'main' || branch === 'master'
           ? `${fg([240, 120, 90])}${arrow} ${branch}${reset}`
-          : `${fg([120, 200, 180])}${arrow} ${branch}${reset}`,
-      );
+          : `${fg([120, 200, 180])}${arrow} ${branch}${reset}`;
     }
   } catch {
     /* not a git repo */
   }
 }
 
-const line1 = parts.length ? parts.join(` ${dim}|${reset} `) : `${dim}🦆 claude-duck${reset}`;
+// worktree name, when Claude Code reports one (distinct from the branch)
+const worktree = d?.workspace?.git_worktree;
 
-// ---- Lines 2–4: a 3-row pond; the duck snakes down then back up, facing travel ----
+let line2 = '';
+if (projName) {
+  line2 =
+    `${dim}Working On:${reset} ${fg([245, 205, 80])}${projName}${reset}` +
+    (worktree ? ` ${dim}(wt: ${worktree})${reset}` : '') +
+    (branchStr ? `  ${branchStr}` : '');
+}
+
+const lines = line2 ? [line1, line2] : [line1];
+
+// ---- Pond: a 3-row band; the duck snakes down then back up, facing travel ----
 const plain1 = stripAnsi(line1);
-const track = Math.max(20, plain1.length); // pond width = the visible width of line 1
+const plain2 = stripAnsi(line2);
+const track = Math.max(20, plain1.length, plain2.length); // pond width = widest text line
 const nrows = 3; // rows of water to swim through
 const dlen = 4; // duck glyph width  (\_o>  /  <o_/)
 const range = Math.max(1, track - dlen); // horizontal span within a row
@@ -197,4 +234,4 @@ for (let r = 0; r < nrows; r++) {
   pondRows.push(s);
 }
 
-process.stdout.write([line1, ...pondRows].join('\n'));
+process.stdout.write([...lines, ...pondRows].join('\n'));
